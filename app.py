@@ -8,7 +8,7 @@ import os
 st.set_page_config(page_title="KEA Report Generator", page_icon="📝", layout="wide")
 
 st.title("📝 KEA COMPREHENSIVE SCHOOL")
-st.subtitle("Automated Student Assessment Report Generator")
+st.subheader("Automated Student Assessment Report Generator")
 
 # Check if the template exists in the GitHub repository folder
 TEMPLATE_PATH = "template.docx"
