@@ -14,11 +14,12 @@ st.set_page_config(page_title="KEA Report Generator", page_icon="📝", layout="
 st.title("📝 KEA COMPREHENSIVE SCHOOL")
 st.subheader("Automated Student Assessment Report Generator")
 
-# Helper function to style cells (Background Color & Borders)
+# Helper function to style cells (Background Color)
 def set_cell_background(cell, hex_color):
     shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{hex_color}"/>')
     cell._tc.get_or_add_tcPr().append(shading_elm)
 
+# Helper function to add inner cell padding
 def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
     tcPr = cell._tc.get_or_add_tcPr()
     tcMar = OxmlElement('w:tcMar')
@@ -68,18 +69,25 @@ def create_report_document(student_data):
     p_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_line.add_run("__________________________________________________________________").font.color.rgb = RGBColor(226, 232, 240)
 
-    # 2. STUDENT DETAILS BLOCK (Using a styled grid/table)
+    # 2. STUDENT DETAILS BLOCK
     details_table = doc.add_table(rows=3, cols=4)
     details_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     details_table.autofit = False
     
+    # Smart structural search for Rank/Position field variation
+    rank_value = "-"
+    for r_key in ['RANK', 'POSITION', 'RA', 'RANK / POSITION']:
+        if r_key in student_data and str(student_data[r_key]).strip() != "-":
+            rank_value = str(student_data[r_key])
+            break
+
     labels = [
         ("NAME:", str(student_data.get('NAME', ''))),
         ("ADM NO:", str(student_data.get('ADM NO', ''))),
-        ("ASSESSMENT NO:", str(student_data.get('ASSESSMENT NUMBER', ''))),
+        ("ASSESSMENT NO:", str(student_data.get('ASSESSMENT NUMBER', student_data.get('ASSESSMENT NO', student_data.get('ENT NO', ''))))),
         ("TERM:", str(student_data.get('TERM', ''))),
         ("YEAR:", str(student_data.get('YEAR', ''))),
-        ("RANK / POSITION:", str(student_data.get('RANK', '')))
+        ("RANK / POSITION:", rank_value)
     ]
     
     idx = 0
@@ -139,7 +147,7 @@ def create_report_document(student_data):
             run.font.color.rgb = RGBColor(255, 255, 255)
             run.font.name = 'Arial'
 
-    # Populate rows matching dynamic columns from spreadsheet mapping
+    # Populate table lines with fallback handlers
     for code, area in learning_areas:
         row_cells = table.add_row().cells
         for i in range(4):
@@ -151,17 +159,34 @@ def create_report_document(student_data):
         row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         row_cells[1].text = area
         
-        # Access scores dynamically based on user's exact spreadsheet naming keys
-        score_key = f"{area} SCORE" if f"{area} SCORE" in student_data else (f"{area} GRADE" if f"{area} GRADE" in student_data else area)
-        perf_key = f"{area} LEVEL" if f"{area} LEVEL" in student_data else f"{area} PERFORMANCE"
-        
-        row_cells[2].text = str(student_data.get(score_key, student_data.get(area, '-')))
+        # --- SCORE / GRADE MAPPING ---
+        score_keys = [f"{area} SCORE", f"{area} GRADE", area]
+        if area == "CREATIVE ARTS AND SPORTS":
+            score_keys.insert(0, "C.A.S")
+            score_keys.insert(1, "CREATIVE ARTS AND SPORTS SCORE")
+            
+        score_val = "-"
+        for sk in score_keys:
+            if sk in student_data and str(student_data[sk]).strip() != "-":
+                score_val = str(student_data[sk])
+                break
+        row_cells[2].text = score_val
         row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        row_cells[3].text = str(student_data.get(perf_key, '-'))
+        # --- PERFORMANCE LEVEL MAPPING ---
+        perf_keys = [f"{area} LEVEL", f"{area} PERFORMANCE", f"{area} P.LEVEL", "P.LEVEL", "PERFORMANCE LEVEL"]
+        if area == "CREATIVE ARTS AND SPORTS":
+            perf_keys.insert(0, "P.LEVEL")
+            
+        perf_val = "-"
+        for pk in perf_keys:
+            if pk in student_data and str(student_data[pk]).strip() != "-":
+                perf_val = str(student_data[pk])
+                break
+        row_cells[3].text = perf_val
         row_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # Apply clean styling fonts
+        # Typography formatting rules
         for cell in row_cells:
             for p in cell.paragraphs:
                 for run in p.runs:
@@ -174,9 +199,12 @@ def create_report_document(student_data):
     summary_table = doc.add_table(rows=2, cols=2)
     summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     
+    total_val = student_data.get('TOTAL MARKS', student_data.get('TOTAL SCORE', student_data.get('TOTAL', '-')))
+    gen_perf_val = student_data.get('GENERAL PERFORMANCE LEVEL', student_data.get('GENERAL PERFORMANCE', student_data.get('PERFORMANCE LEVEL', '-')))
+    
     summary_data = [
-        ("TOTAL SCORE:", str(student_data.get('TOTAL MARKS', student_data.get('TOTAL SCORE', '')))),
-        ("GENERAL PERFORMANCE LEVEL:", str(student_data.get('GENERAL PERFORMANCE LEVEL', student_data.get('PERFORMANCE LEVEL', ''))))
+        ("TOTAL SCORE:", str(total_val)),
+        ("GENERAL PERFORMANCE LEVEL:", str(gen_perf_val))
     ]
     
     for r in range(2):
@@ -204,12 +232,19 @@ def create_report_document(student_data):
     # 5. REMARKS AND DATES SECTION
     p_remarks = doc.add_paragraph()
     p_remarks.add_run("Class Teacher's Comment: ").font.bold = True
-    comment = str(student_data.get('TEACHER COMMENT', student_data.get('GENERAL PERFORMANCE LEVEL', 'Keep up the effort!')))
+    
+    comment_keys = ['TEACHER COMMENT', 'CLASS TEACHER COMMENT', 'COMMENT', 'COMMENTS', 'REMARKS']
+    comment = "-"
+    for ck in comment_keys:
+        if ck in student_data and str(student_data[ck]).strip() != "-":
+            comment = str(student_data[ck])
+            break
+            
     p_remarks.add_run(f'"{comment}"\n\n')
     p_remarks.runs[0].font.name = 'Arial'
     if len(p_remarks.runs) > 1: p_remarks.runs[1].font.name = 'Arial'
 
-    # Term Terminus Dates Calendar Layout
+    # Term Dates Row Setup
     date_table = doc.add_table(rows=1, cols=2)
     date_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     
@@ -220,11 +255,11 @@ def create_report_document(student_data):
     
     p_close = c_close.paragraphs[0]
     p_close.add_run("Closing Date: ").font.bold = True
-    p_close.add_run(str(student_data.get('CLOSING DATE', student_data.get('Closing Date', 'N/A'))))
+    p_close.add_run(str(student_data.get('CLOSING DATE', student_data.get('CLOSING', 'N/A'))))
     
     p_open = c_open.paragraphs[0]
     p_open.add_run("Opening Date: ").font.bold = True
-    p_open.add_run(str(student_data.get('OPENING DATE', student_data.get('Opening Date', 'N/A'))))
+    p_open.add_run(str(student_data.get('OPENING DATE', student_data.get('OPENING', 'N/A'))))
     
     for run in p_close.runs + p_open.runs:
         run.font.name = 'Arial'
@@ -244,12 +279,13 @@ def create_report_document(student_data):
 
     return doc
 
-# WEB APP WORKFLOW
+
+# --- WEB INTERFACE WORKFLOW ---
 uploaded_excel = st.file_uploader("Upload Student Data Excel Sheet (.xlsx)", type=["xlsx"])
 
 if uploaded_excel:
     try:
-        # Load excel data and clean up headers to be uppercase stripped strings
+        # Load data frames and clean spaces, then scale column strings to uniform upper-case
         df = pd.read_excel(uploaded_excel)
         df.columns = df.columns.str.strip().str.upper()
         
@@ -257,7 +293,7 @@ if uploaded_excel:
         st.write("### Preview of Uploaded Student Data", df.head())
         
         if st.button("Generate Assessment Reports"):
-            with st.spinner("Compiling reports cleanly in memory... Please wait."):
+            with st.spinner("Processing files cleanly... Please wait."):
                 
                 zip_buffer = io.BytesIO()
                 
@@ -265,7 +301,7 @@ if uploaded_excel:
                     for index, row in df.iterrows():
                         student_data = row.to_dict()
                         
-                        # Clean dictionary item strings
+                        # Data scrubbing and cleaning loop
                         cleaned_data = {}
                         for k, v in student_data.items():
                             if isinstance(v, float) and v.is_integer():
@@ -275,7 +311,7 @@ if uploaded_excel:
                             else:
                                 cleaned_data[k] = str(v)
                         
-                        # Generate Document completely dynamically without loading external files
+                        # Generate dynamic word files matching data row context
                         doc = create_report_document(cleaned_data)
                         
                         doc_io = io.BytesIO()
