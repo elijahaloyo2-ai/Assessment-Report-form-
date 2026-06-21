@@ -10,7 +10,6 @@ st.set_page_config(page_title="KEA Report Generator", page_icon="📝", layout="
 st.title("📝 KEA COMPREHENSIVE SCHOOL")
 st.subheader("Automated Student Assessment Report Generator")
 
-# Check if the template exists in the GitHub repository folder
 TEMPLATE_PATH = "template.docx"
 
 if not os.path.exists(TEMPLATE_PATH):
@@ -18,7 +17,6 @@ if not os.path.exists(TEMPLATE_PATH):
 else:
     st.success("✅ KEA Report Template loaded and ready.")
 
-    # Now teachers only need to upload the Excel file!
     uploaded_excel = st.file_uploader("Upload Student Data Excel Sheet (.xlsx)", type=["xlsx"])
 
     if uploaded_excel:
@@ -30,12 +28,16 @@ else:
             if st.button("Generate Assessment Reports"):
                 with st.spinner("Processing reports... Please wait."):
                     
+                    # 1. Read the template file into memory ONCE as bytes
+                    with open(TEMPLATE_PATH, "rb") as f:
+                        template_bytes = f.read()
+                    
                     zip_buffer = io.BytesIO()
                     
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                         for index, row in df.iterrows():
-                            # Load the permanent template from the file path
-                            doc = DocxTemplate(TEMPLATE_PATH)
+                            # 2. Feed an in-memory copy of the template to DocxTemplate
+                            doc = DocxTemplate(io.BytesIO(template_bytes))
                             
                             context = row.to_dict()
                             cleaned_context = {k: (str(int(v)) if isinstance(v, float) and v.is_integer() else str(v)) for k, v in context.items()}
